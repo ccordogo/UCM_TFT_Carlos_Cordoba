@@ -1,0 +1,5 @@
+pandas
+requests
+howlongtobeatpy
+matplotlib
+numpy
