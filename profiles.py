@@ -3,9 +3,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 from collections import Counter
+from math import pi
 
-
-#agrupar géneros para Yee
+#tags are obtained from print_unique_tags in exploration.py
+#group genres for Yee map
 YEE_MAP = {
     'Action': ['action', 'ação', 'экшены', 'azione', '动作', '액션'],
     'Immersion': ['rpg', 'adventure', 'aventura', 'приключенческие игры', 'gdr', 'ролевые игры', '어드벤처'],
@@ -18,7 +19,7 @@ YEE_MAP = {
 
 
 
-#agrupar géneros para Bartle
+#group genres for Bartle map
 BARTLE_MAP = {
     'Killer': ['pvp', 'jvj', 'lan pvp', 'pvp in lan', 'shooter', 'battle royale', 'competitive', 'игрок против игрока', 'pvp online', '玩家对战', '线上玩家对战'],
     'Achiever': ['steam achievements', 'difficult', 'story rich', 'достижения steam', 'logros de steam', 'achievement di steam', 'steam 도전 과제'],
@@ -27,29 +28,40 @@ BARTLE_MAP = {
 }
 
 
-#funciones
+# ------------------- FUNCTIONS -------------------
 
 def count_motivation_points(row, map_dict):
+    #initializes a dictionary with all the points at 0.0
     count = {k: 0.0 for k in map_dict.keys()}
+    #gets hours played for the row , default = 0
     weight = float(row.get('playtime_hours', 0))
+    #gets achievements ratio
     achievements = float(row.get('achievement_ratio', 0))
 
     tags = []
+    #iterates fot the clolumns genres and categories
     for col in ('genres', 'categories'):
+        #gets value, default = empty
         cell = row.get(col, [])
+        #if is a string
         if isinstance(cell, str):
             try:
                 import ast
+                #convert to list
                 cell = ast.literal_eval(cell)
             except:
                 cell = []
         for tag in cell:
+            #add tag to list without spaces and in lowercase
             tags.append(tag.strip().lower())
 
+    #for each motivation and keyword
     for motive, keywords in map_dict.items():
         for kw in keywords:
             kw = kw.strip().lower()
+            #if a tag contains the keyword (kw)
             if any(kw in tag for tag in tags):
+                #for achiever motivation multiplies by the obtained ratio
                 if motive.lower() in ['achievement', 'achiever']:
                     count[motive] += weight * achievements
                 else:
@@ -58,45 +70,56 @@ def count_motivation_points(row, map_dict):
 
     return pd.Series(count)
 
+
+
+
 def compute_profiles(df):
+    #groups by participant id and uses count_motivation_points for each group for Yee
     yee_df = df.groupby('participant_id', group_keys=False).apply(
         lambda group: group.apply(count_motivation_points, axis=1, args=(YEE_MAP,)).sum()
     )
-    
+    #groups by participant id and uses count_motivation_points for each group for Bartle
     bartle_df = df.groupby('participant_id', group_keys=False).apply(
         lambda group: group.apply(count_motivation_points, axis=1, args=(BARTLE_MAP,)).sum()
     )
 
     return yee_df, bartle_df
 
-#visualizaciones
+
+
+# ------------------- VISUALIZATIONS -------------------
 
 
 
 def save_yee_radar_png(yee_df, player_id, output_dir="output"):
-    from math import pi
-    import os
 
-    print(f"→ Generando yee para {player_id}")
+    print(f"Generando yee para {player_id}")
     os.makedirs(output_dir, exist_ok=True)
 
-    #normalizar
+    #normalizes values
     yee_normalized = yee_df.div(yee_df.sum(axis=1), axis=0)
     player_values = yee_normalized.loc[player_id].values
+    #calculates average values for the group
     avg_values = yee_normalized.mean().values
 
+    #get labels
     labels = list(yee_df.columns)
+    #count variales
     num_vars = len(labels)
 
+    #calculates angles for each variable
     angles = [n / float(num_vars) * 2 * pi for n in range(num_vars)]
     player_values = np.append(player_values, player_values[0])
     avg_values = np.append(avg_values, avg_values[0])
     angles += angles[:1]
 
     fig, ax = plt.subplots(figsize=(6, 6), subplot_kw=dict(polar=True))
+    
+    #player draw
     ax.plot(angles, player_values, linewidth=1.5, linestyle='solid', label=player_id)
     ax.fill(angles, player_values, alpha=0.3)
 
+    #avg draw
     ax.plot(angles, avg_values, linewidth=1.5, linestyle='dashed', label='Grupo promedio')
     ax.fill(angles, avg_values, alpha=0.1)
 
@@ -104,18 +127,21 @@ def save_yee_radar_png(yee_df, player_id, output_dir="output"):
     ax.set_xticklabels(labels, fontsize=10)
     ax.set_title(f"Gamer Motivation Profile - {player_id}")
     ax.legend(loc='lower center', bbox_to_anchor=(0.5, -0.15))
-
+    
+    #save
     filename = f"{player_id}_gmp_yee.png"
     path = os.path.join(output_dir, filename)
     plt.tight_layout()
     plt.savefig(path)
     plt.close()
-    print(f"Creado")
-
-    print("Puntuaciones normalizadas Yee:")
+    print(f"Creado") #confirmation
+    
+    
+    #print punctuations
+    print("Puntuaciones normalizadas Yee:") #users
     for label, val in zip(labels, yee_normalized.loc[player_id]):
         print(f"- {label}: {val:.2f}")
-    print("Media del grupo:")
+    print("Media del grupo:") #avg
     for label, val in zip(labels, yee_normalized.mean()):
         print(f"- {label}: {val:.2f}")
     print("==========================================")
@@ -123,30 +149,32 @@ def save_yee_radar_png(yee_df, player_id, output_dir="output"):
 
 
 def plot_bartle_compass(bartle_df, normalize=True, save_path="output/bartle_compass.png"):
-    import os
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
 
-    x = bartle_df['Killer'] - bartle_df['Socializer']   #eje x acción vs interacción
-    y = bartle_df['Achiever'] - bartle_df['Explorer']   #eje y mundo vs jugadores
+    x = bartle_df['Killer'] - bartle_df['Socializer']   #axis x action vs interaction
+    y = bartle_df['Achiever'] - bartle_df['Explorer']   #axis y world vs players
 
+    #normalize values
     if normalize:
         x = x / (np.abs(x).max() or 1)
         y = y / (np.abs(y).max() or 1)
 
     plt.figure(figsize=(10, 10))
     
-    #puntos
+    #point position for every participant
     for user in bartle_df.index:
         plt.scatter(x[user], y[user], s=100)
         plt.text(x[user] + 0.03, y[user] + 0.03, user, fontsize=10)
 
-    #lineas y etiquetas
+    #axis
     plt.axhline(0, color='black', linestyle='-', alpha=0.3)
     plt.axvline(0, color='black', linestyle='-', alpha=0.3)
+    #dimensions
     plt.text(1.1, 1.1, 'Achiever', ha='center', va='center', fontsize=12, fontweight='bold', color='blue')
     plt.text(-1.1, 1.1, 'Explorer', ha='center', va='center', fontsize=12, fontweight='bold', color='green')
     plt.text(1.1, -1.1, 'Killer', ha='center', va='center', fontsize=12, fontweight='bold', color='red')
     plt.text(-1.1, -1.1, 'Socializer', ha='center', va='center', fontsize=12, fontweight='bold', color='purple')
+    #axis labels
     plt.text(0, 1.15, 'MUNDO', ha='center', va='center', fontsize=11, fontweight='bold')
     plt.text(0, -1.15, 'JUGADORES', ha='center', va='center', fontsize=11, fontweight='bold')
     plt.text(1.15, 0, 'ACCIÓN', ha='center', va='center', fontsize=11, fontweight='bold', rotation=90)
@@ -156,50 +184,24 @@ def plot_bartle_compass(bartle_df, normalize=True, save_path="output/bartle_comp
     plt.ylim(-1.3, 1.3)
     plt.title('Taxonomía de Bartle', fontsize=14)
     plt.grid(True, linestyle='--', alpha=0.7)
+
+    #save
     plt.tight_layout()
     plt.savefig(save_path, format='png')
     plt.close()
 
+    #confirmation
     print("Bartle creado")
 
+    #group resume
     print("\nResumen grupal:")
     print(f"→ Eje X: media = {x.mean():+.2f} | mediana = {x.median():+.2f}")
     print(f"→ Eje Y: media = {y.mean():+.2f} | mediana = {y.median():+.2f}")
     print("==========================================")
 
 
-#informe perfiles
 
-
-def print_user_stats(df):
-    participants = df['participant_id'].unique()
-
-    for user in sorted(participants):
-        user_df = df[df['participant_id'] == user]
-        played_games = user_df[user_df['playtime_hours'] > 0]
-
-        total_games = len(user_df)
-        num_played = len(played_games)
-        total_playtime = played_games['playtime_hours'].sum()
-        avg_playtime = played_games['playtime_hours'].mean()
-        median_playtime = played_games['playtime_hours'].median()
-
-        played_with_achievements = played_games[played_games['achievement_ratio'].notna()]
-        mean_achievement_ratio = played_with_achievements['achievement_ratio'].mean()
-
-        print(f"Resultados para {user}")
-        print(f"- Juegos en la biblioteca: {total_games}")
-        print(f"- Juegos jugados: {num_played}")
-        print(f"- Porcentaje jugados: {num_played / total_games:.1%}")
-        print(f"- Tiempo total jugado: {total_playtime:.1f} h")
-        print(f"- Tiempo medio por juego: {avg_playtime:.1f} h")
-        print(f"- Mediana de horas jugadas: {median_playtime:.1f} h")
-        print(f"- Ratio medio de logros (juegos jugados): {mean_achievement_ratio:.2f}")
-        print("========================================")
-
-
-
-#gráfico TOP juegos + géneros
+#TOP games and genres
 def plot_top_games_with_genres(df, output_dir="output"):
     os.makedirs(output_dir, exist_ok=True)
     
@@ -210,20 +212,21 @@ def plot_top_games_with_genres(df, output_dir="output"):
         
         try:
             user_data = df[df['participant_id'] == user_id]
-            top_games = user_data.nlargest(10, 'playtime_hours')
+            top_games = user_data.nlargest(10, 'playtime_hours') #TOP 10 games
             
+            #if no data for user
             if len(top_games) == 0:
                 print(f"Error datos {user_id}")
                 continue
             
             fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 8))
             
-            #gráfico de horas
+            ####playtime graph
             bars1 = ax1.barh(range(len(top_games)), top_games['playtime_hours'], 
                              color='skyblue', alpha=0.7)
             ax1.set_yticks(range(len(top_games)))
             
-            #reducir nombres largos
+            #reduce long names
             formatted_names = []
             for name in top_games['name_x']:
                     name_str = str(name)
@@ -236,11 +239,11 @@ def plot_top_games_with_genres(df, output_dir="output"):
             ax1.set_xlabel('Horas jugadas', fontsize=14)
             ax1.set_title(f'Top 10 juegos más jugados - {user_id}', fontsize=18)
             
-            #añadir valores
+            #add values
             for i, v in enumerate(top_games['playtime_hours']):
                 ax1.text(v + 0.5, i, f'{v:.1f}h', va='center', fontsize=12)
             
-            #gráfico de géneros
+            ####genres graph
             all_genres = []
             for genres in top_games['genres']:
                 if pd.isna(genres):
@@ -259,7 +262,7 @@ def plot_top_games_with_genres(df, output_dir="output"):
                         all_genres.append(genres)
             
             genre_counts = Counter(all_genres)
-            top_genres = dict(genre_counts.most_common(8))
+            top_genres = dict(genre_counts.most_common(8)) #TOP 8 genres
             
             if top_genres:
                 ax2.bar(range(len(top_genres)), list(top_genres.values()), 
@@ -269,28 +272,30 @@ def plot_top_games_with_genres(df, output_dir="output"):
                 ax2.set_ylabel('Frecuencia', fontsize=14)
                 ax2.set_title(f'Géneros dominantes en juegos más jugados - {user_id}', fontsize=18)
             else:
+                #if no data
                 ax2.text(0.5, 0.5, 'Sin datos disponibles', 
                         ha='center', va='center', transform=ax2.transAxes)
                 ax2.set_title(f'Géneros dominantes - {user_id}')
             
             plt.tight_layout()
             
-            #guardar en local
+            #save
             filename = f"{user_id}_games_and_genres.png"
             path = os.path.join(output_dir, filename)
             plt.savefig(path, dpi=600, bbox_inches='tight')
             plt.close()
             
+            #confirmation for individual user
             print(f"Creado para {user_id}")
             
         except Exception as e:
             print(f"Error en {user_id}")
             continue
-    
+    #confirmation for all users
     print(f"Creado para todos los usuarios")
 
 
-#histograma distribucion de generos
+#genre distribution
 def plot_genre_distribution_histogram(df, output_dir="output"):
     os.makedirs(output_dir, exist_ok=True)
     
@@ -325,9 +330,9 @@ def plot_genre_distribution_histogram(df, output_dir="output"):
                 continue
             
             genre_counts = Counter(all_genres)
-            top_genres = dict(genre_counts.most_common(10))
+            top_genres = dict(genre_counts.most_common(10)) #TOP 10
             
-            #crear grafico
+            #create graph
             plt.figure(figsize=(12, 6))
             bars = plt.bar(range(len(top_genres)), list(top_genres.values()), 
                            color='steelblue', alpha=0.7)
@@ -337,14 +342,14 @@ def plot_genre_distribution_histogram(df, output_dir="output"):
             plt.ylabel('Número de juegos')
             plt.title(f'Distribución de géneros en la biblioteca - {user_id}', fontsize=18, fontweight='bold')
             
-            #añadir valores en las barras
+            #add values on the bars
             for bar, value in zip(bars, top_genres.values()):
                 plt.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.1, 
                         str(value), ha='center', va='bottom', fontsize=12)
             
             plt.tight_layout()
             
-            #guardar en local
+            #save in local
             filename = f"{user_id}_genre_histogram.png"
             path = os.path.join(output_dir, filename)
             plt.savefig(path, dpi=600, bbox_inches='tight')
@@ -355,5 +360,42 @@ def plot_genre_distribution_histogram(df, output_dir="output"):
         except Exception as e:
             print(f"Error en {user_id}")
             continue
-    
+    #confirmation
     print(f"Creado para todos los usuarios")
+
+
+# ------------------- PROFILE REPORT -------------------
+
+
+def print_user_stats(df):
+    participants = df['participant_id'].unique()
+
+    #for each user and played games
+    for user in sorted(participants):
+        user_df = df[df['participant_id'] == user]
+        played_games = user_df[user_df['playtime_hours'] > 0]
+
+        #calculates
+        total_games = len(user_df) #number of games
+        num_played = len(played_games) #number of played games
+        total_playtime = played_games['playtime_hours'].sum() #total playtime
+        avg_playtime = played_games['playtime_hours'].mean() #average playtime hours
+        median_playtime = played_games['playtime_hours'].median() #playtime median
+
+        #achievemnts ratio
+        played_with_achievements = played_games[played_games['achievement_ratio'].notna()]
+        mean_achievement_ratio = played_with_achievements['achievement_ratio'].mean()
+
+        #report
+        print(f"Resultados para {user}") #user
+        print(f"- Juegos en la biblioteca: {total_games}") #number of games
+        print(f"- Juegos jugados: {num_played}") #number of played games
+        print(f"- Porcentaje jugados: {num_played / total_games:.1%}") #percentaje of played games
+        print(f"- Tiempo total jugado: {total_playtime:.1f} h") #total playtime
+        print(f"- Tiempo medio por juego: {avg_playtime:.1f} h") #average playtime hours
+        print(f"- Mediana de horas jugadas: {median_playtime:.1f} h") #median playtime
+        print(f"- Ratio medio de logros (juegos jugados): {mean_achievement_ratio:.2f}") #achievemnts ratio
+        print("========================================")
+
+
+

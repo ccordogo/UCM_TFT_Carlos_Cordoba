@@ -2,6 +2,7 @@ import pandas as pd
 from howlongtobeatpy import HowLongToBeat
 import time
 
+#to convert strings into lists
 def normalize_list_column(series):
     return series.fillna('').apply(lambda x: [i.strip() for i in x.split(',')] if isinstance(x, str) else [])
 
@@ -9,23 +10,31 @@ def convert_playtime_minutes_to_hours(df):
     df['playtime_hours'] = (df['playtime_forever'] / 60).round(1)
     return df
 
+
+
+#adds how long to beat data into de dataframe for each game
 def add_hltb_data(df, game_name_col='name'):
     hltb = HowLongToBeat()
     hltb_data = []
 
+    #drop Nan values and only aplies to unique ids for prevent duplicate queries
     game_names = df[game_name_col].dropna().unique()
 
     for name in game_names:
         try:
             results = hltb.search(name)
             if results:
+                #uses matching because of some names and editions coincidence
                 best_match = max(results, key=lambda x: x.similarity)
+                #gets data
                 hltb_data.append({
                     "name": best_match.game_name,
                     "hltb_main_story": best_match.main_story,
                     "hltb_main_extra": best_match.main_extra,
                     "hltb_completionist": best_match.completionist
                 })
+
+            #if there's no info, returns None values
             else:
                 hltb_data.append({
                     "name": name,
@@ -33,7 +42,8 @@ def add_hltb_data(df, game_name_col='name'):
                     "hltb_main_extra": None,
                     "hltb_completionist": None
                 })
-            time.sleep(1.0)  # evita bloqueo api
+            time.sleep(1.0)  #to avoid api problems
+        #exception handling
         except Exception as e:
             print(f"Error con '{name}': {e}")
             hltb_data.append({
@@ -43,9 +53,10 @@ def add_hltb_data(df, game_name_col='name'):
                 "hltb_completionist": None
             })
 
+    #converts to pandas df
     hltb_df = pd.DataFrame(hltb_data)
 
-    #merge con columna pasada como argumento
+    #join with original df
     df = df.merge(hltb_df, left_on=game_name_col, right_on='name', how='left')
 
     return df
