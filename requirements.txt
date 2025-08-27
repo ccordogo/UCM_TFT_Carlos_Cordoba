@@ -3,3 +3,4 @@ requests
 howlongtobeatpy
 matplotlib
 numpy
+seaborn
